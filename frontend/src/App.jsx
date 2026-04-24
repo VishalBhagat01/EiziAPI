@@ -7,6 +7,7 @@ function App() {
   const [projectName, setProjectName] = useState('')
   const [description, setDescription] = useState('')
   const [authType, setAuthType] = useState('bearer_token')
+  const [codeLanguage, setCodeLanguage] = useState('javascript')
   const [numEndpoints, setNumEndpoints] = useState(5)
   const [loading, setLoading] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(false)
@@ -18,6 +19,7 @@ function App() {
     project_name: projectName || 'My API',
     description,
     auth_type: authType,
+    code_language: codeLanguage,
     num_endpoints: parseInt(numEndpoints) || 5,
   })
 
@@ -158,8 +160,12 @@ function App() {
                 onChange={(e) => setNumEndpoints(e.target.value)}
               />
             </div>
-            <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
-              {/* Spacer for alignment */}
+            <div className="form-group">
+              <label htmlFor="code-language">Language</label>
+              <select id="code-language" value={codeLanguage} onChange={(e) => setCodeLanguage(e.target.value)}>
+                <option value="javascript">JavaScript</option>
+                <option value="python">Python</option>
+              </select>
             </div>
           </div>
 
@@ -280,6 +286,16 @@ function App() {
                       </>
                     )}
 
+                    {/* Code Example */}
+                    {ep.code_example && (
+                      <>
+                        <p className="schema-title">Code Example</p>
+                        <div className="code-block">
+                          <pre>{ep.code_example}</pre>
+                        </div>
+                      </>
+                    )}
+
                     {/* Status Codes */}
                     {ep.status_codes && (
                       <>
@@ -306,20 +322,51 @@ function App() {
 
             {/* Test Cases */}
             {doc.test_cases && doc.test_cases.length > 0 && (
-              <div className="tests-section">
-                <h3 style={{ marginBottom: 12 }}>🧪 Test Suite</h3>
-                {doc.test_cases.map((tc, i) => (
-                  <div className="test-card" key={i}>
-                    <div className="test-name">def {tc.name}():</div>
-                    <div className="test-desc"># {tc.description}</div>
-                    <div className="test-assert">
-                      {tc.method} {tc.endpoint} → expects {tc.expected_status}
+              <div className="tests-section" style={{ marginTop: '40px' }}>
+                <h3 style={{ marginBottom: '20px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
+                  🧪 Testing Requirements
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '20px' }}>
+                  These validation scenarios should be implemented in your CI/CD test suite ({codeLanguage === 'javascript' ? 'e.g., Jest, Supertest' : 'e.g., Pytest'}).
+                </p>
+                <div style={{ display: 'grid', gap: '16px' }}>
+                  {doc.test_cases.map((tc, i) => (
+                    <div className="test-card" key={i} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--text-primary)' }}>
+                          {tc.name.replace(/_/g, ' ').replace(/^test /i, '').replace(/\b\w/g, l => l.toUpperCase())}
+                        </div>
+                        <div className={`method-badge ${tc.method?.toLowerCase()}`}>
+                          {tc.method}
+                        </div>
+                      </div>
+                      
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '14px', margin: 0 }}>{tc.description}</p>
+                      
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px', background: 'var(--bg-input)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                        <div style={{ flex: 1 }}>
+                          <span style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>Target Endpoint</span>
+                          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--accent-cyan)', marginTop: '4px' }}>{tc.endpoint}</div>
+                        </div>
+                        <div style={{ paddingLeft: '16px', borderLeft: '1px solid var(--border)' }}>
+                          <span style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>Expected Status</span>
+                          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--text-primary)', marginTop: '4px' }}>{tc.expected_status}</div>
+                        </div>
+                      </div>
+
+                      {tc.assertions && tc.assertions.length > 0 && (
+                        <div>
+                          <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Validation Criteria:</span>
+                          <ul style={{ margin: '8px 0 0 20px', padding: 0, color: 'var(--text-light)', fontSize: '14px' }}>
+                            {tc.assertions.map((a, j) => (
+                              <li key={j} style={{ paddingBottom: '6px' }}>{a}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
-                    {tc.assertions?.map((a, j) => (
-                      <div className="test-assert" key={j}>assert {a}</div>
-                    ))}
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
           </section>

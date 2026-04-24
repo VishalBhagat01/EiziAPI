@@ -137,8 +137,20 @@ def build_styles():
     styles["test_name"] = ParagraphStyle(
         "test_name",
         fontName="Courier",
+        fontSize=10,
+        textColor=ACCENT_CYAN,
+        spaceAfter=4,
+    )
+    styles["code_block"] = ParagraphStyle(
+        "code_block",
+        fontName="Courier",
         fontSize=9,
-        textColor=ACCENT_GREEN,
+        textColor=TEXT_LIGHT,
+        leading=12,
+        spaceBefore=8,
+        spaceAfter=12,
+        leftIndent=10,
+        rightIndent=10,
     )
     return styles
 
@@ -294,25 +306,80 @@ def generate_pdf(doc_data: dict) -> bytes:
             for line in json_str.split("\n"):
                 story.append(Paragraph(line.replace(" ", "&nbsp;"), styles["code"]))
 
-        story.append(Spacer(1, 8))
+        # Code Example
+        code_eg = ep.get("code_example", "")
+        if code_eg:
+            story.append(Spacer(1, 8))
+            story.append(Paragraph("<b>Client Code Example:</b>", styles["label"]))
+            code_lines = str(code_eg).split("\n")
+            
+            # Create a box for the code snippet
+            code_bg = Table([[Preformatted("\n".join(code_lines), styles["code"])]], colWidths=[W])
+            code_bg.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), BG_DARK),
+                ("BORDER", (0, 0), (-1, -1), 0.5, BORDER_DARK),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ]))
+            story.append(code_bg)
+            story.append(Spacer(1, 10))
+
+        story.append(Spacer(1, 12))
         story.append(HRFlowable(width="100%", thickness=0.5, color=BORDER_DARK))
 
     # ── Test Cases ──
     test_cases = doc_data.get("test_cases", [])
     if test_cases:
-        story += section_header(f"TEST SUITE ({len(test_cases)} tests)", styles, ACCENT_PURPLE)
+        story += section_header(f"TESTING REQUIREMENTS ({len(test_cases)} scenarios)", styles, ACCENT_PURPLE)
+        
         for tc in test_cases:
             if isinstance(tc, dict):
-                story.append(Paragraph(f"def {tc.get('name', 'test_unnamed')}():", styles["test_name"]))
-                story.append(Paragraph(f"  # {tc.get('description', '')}", styles["body"]))
-                story.append(Paragraph(
-                    f"  {tc.get('method', 'GET')} {tc.get('endpoint', '/')} → expects {tc.get('expected_status', 200)}",
-                    styles["code"]
-                ))
-                assertions = tc.get("assertions", [])
-                for a in assertions:
-                    story.append(Paragraph(f"  assert {a}", styles["code"]))
+                # Clean up the test name into a readable scenario title
+                raw_name = tc.get('name', 'test_unnamed').replace("_", " ").title()
+                if raw_name.lower().startswith("test "):
+                    raw_name = raw_name[5:]
+                
+                # Test Header Frame
+                test_header_table = Table([[
+                    Paragraph(f"<b>{tc.get('method', 'GET')}</b>", styles["method_badge"]),
+                    Paragraph(f"<b>{raw_name}</b>", styles["test_name"])
+                ]], colWidths=[2.5*cm, W - 2.5*cm])
+                
+                test_header_table.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (0, 0), METHOD_COLORS.get(tc.get('method', 'GET'), ACCENT_CYAN)),
+                    ("BACKGROUND", (1, 0), (1, 0), BG_CARD),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ]))
+                story.append(test_header_table)
+                
+                # Test specifics
                 story.append(Spacer(1, 6))
+                
+                if tc.get('description'):
+                    story.append(Paragraph(tc.get('description', ''), styles["body"]))
+                    story.append(Spacer(1, 4))
+                
+                story.append(Paragraph(f"<font color='{TEXT_GRAY.hexval()}'>Target Endpoint: </font> <font face='Courier'>{tc.get('endpoint', '/')}</font>", styles["body"]))
+                story.append(Paragraph(f"<font color='{TEXT_GRAY.hexval()}'>Expected Status: </font> {tc.get('expected_status', 200)}", styles["body"]))
+                
+                story.append(Spacer(1, 4))
+                story.append(Paragraph("<b>Validation Criteria:</b>", styles["label"]))
+                
+                # Build an elegant list for assertions instead of rendering code block
+                assertions = tc.get("assertions", [])
+                if not assertions and tc.get("code"):
+                    # Fallback gracefully if AI only gave code
+                    assertions = ["Review code segment or endpoint output validation"]
+
+                for a in assertions:
+                    story.append(Paragraph(f"• {str(a)}", styles["body"]))
+                
+                story.append(Spacer(1, 14))
 
     # ── Setup Instructions ──
     setup = doc_data.get("setup_instructions", "")

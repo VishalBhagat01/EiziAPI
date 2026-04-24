@@ -27,6 +27,10 @@ class AuthType(str, Enum):
     BEARER = "bearer_token"
     BASIC = "basic_auth"
 
+class CodeLanguage(str, Enum):
+    PYTHON = "python"
+    JAVASCRIPT = "javascript"
+
 
 # ─────────────────────────────────────────────
 # Input: User-defined endpoint spec (optional)
@@ -53,6 +57,7 @@ class APIGenieRequest(BaseModel):
     project_name: str = Field(default="My API", description="Name of the API project")
     description: str = Field(..., description="Natural language description of the API (e.g. 'A fintech wallet API with transfers, KYC, and balance')")
     auth_type: AuthType = Field(default=AuthType.BEARER, description="Authentication scheme for the mock API")
+    code_language: CodeLanguage = Field(default=CodeLanguage.PYTHON, description="Language for generated code examples")
     endpoints: Optional[List[EndpointSpec]] = Field(default=None, description="Optional: explicitly define some endpoints")
     num_endpoints: int = Field(default=5, ge=1, le=15, description="How many endpoints to generate if none are specified")
 
@@ -76,6 +81,7 @@ class MockEndpoint(BaseModel):
     request_schema: Optional[Any] = None
     response_schema: Any = []
     sample_response: Any = {}
+    code_example: str = ""
     status_codes: Any = Field(
         default={"200": "Success"},
         description="Map of status code to description"
@@ -90,6 +96,7 @@ class TestCase(BaseModel):
     expected_status: int = 200
     request_body: Optional[Any] = None
     assertions: Any = Field(default=[], description="List of assertion descriptions")
+    code: str = Field(default="", description="The actual runnable test code string in the selected language")
 
 
 # ─────────────────────────────────────────────

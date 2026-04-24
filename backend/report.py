@@ -46,6 +46,7 @@ def build_context(request: APIGenieRequest) -> str:
   Project Name        : {request.project_name}
   API Description     : {request.description}
   Authentication      : {request.auth_type.value}
+  Code Language       : {request.code_language.value}
   Requested Endpoints : {request.num_endpoints}
 """)
 
@@ -84,8 +85,9 @@ Design a RESTful API with the following requirements:
 1. **Endpoints**: Generate {num_endpoints} well-designed REST endpoints following best practices (proper HTTP verbs, resource naming, pagination, etc.)
 2. **Schemas**: For each endpoint, define request and response schemas with realistic field types (string, integer, float, boolean, uuid, datetime, email, url, phone)
 3. **Sample Responses**: Generate realistic, domain-specific sample data (not "test123" or "foo" — use real-looking names, emails, amounts, etc.)
-4. **Test Cases**: Generate pytest-style test case definitions for each endpoint (at least 1 per endpoint)
-5. **Auth**: Include auth instructions for {auth_type}
+4. **Code Example**: Provide a highly realistic Client code example strictly written in {code_language} (e.g. Node.js/Fetch for JavaScript, requests for Python) to call the endpoint including the {auth_type} headers. YOU MUST NOT RETURN PYTHON CODE IF JAVASCRIPT IS REQUESTED.
+5. **Test Cases**: Generate test case definitions for each endpoint appropriate for the chosen language (e.g., Jest/Mocha naming for JS, Pytest for Python).
+6. **Auth**: Include auth instructions for {auth_type}
 
 Return ONLY a valid JSON object in this exact structure:
 
@@ -108,6 +110,7 @@ Return ONLY a valid JSON object in this exact structure:
         {{"name": "field_name", "type": "string", "description": "What this field is", "example": "example_value"}}
       ],
       "sample_response": {{"key": "realistic_value"}},
+      "code_example": "String containing the EXACT code example in {code_language} for how to make the request using the requested {auth_type}",
       "status_codes": {{"200": "Success", "404": "Resource not found"}}
     }}
   ],
@@ -119,13 +122,16 @@ Return ONLY a valid JSON object in this exact structure:
       "description": "Verify that GET /resource returns a 200 with valid data",
       "expected_status": 200,
       "request_body": null,
-      "assertions": ["Response contains 'id' field", "Status code is 200"]
+      "assertions": ["Response contains 'id' field", "Status code is 200"],
+      "code": "Actual runnable test code snippet in {code_language} checking these assertions (e.g. jest or pytest)"
     }}
   ],
   "setup_instructions": "Step-by-step instructions to run the mock server locally"
 }}
 
 IMPORTANT RULES:
+- The `code_example` property MUST be written in the {code_language} language. Return JavaScript `fetch()` snippets if JavaScript is selected.
+- The `code` property in `test_cases` MUST be a fully functioning snippet for a popular testing framework in {code_language} (e.g., Jest/Mocha for JavaScript, Pytest for Python).
 - request_schema should be null for GET/DELETE endpoints
 - Generate realistic, domain-appropriate data (real names, real-looking UUIDs, realistic amounts)
 - Follow REST naming conventions (plural nouns, no verbs in paths)
@@ -171,6 +177,7 @@ def generate_api_spec(request: APIGenieRequest) -> Tuple[dict, str]:
         "context": context,
         "project_name": request.project_name,
         "auth_type": request.auth_type.value,
+        "code_language": request.code_language.value,
         "num_endpoints": request.num_endpoints,
     })
 
