@@ -35,5 +35,4 @@ ENV/
 # PDF Output (Optional, if you don't want to track generated reports)
 *.pdf
 
-# Debug scripts
-test_models.py
+
