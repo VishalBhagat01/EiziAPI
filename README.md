@@ -1,19 +1,62 @@
 # ⚡ API-Genie — AI-Powered API Mock & Documentation Generator
 
-Describe your API in plain English and instantly get:
-- **Complete REST API specification** with realistic mock data
-- **Professional PDF documentation** (Stripe-style)
-- **Pytest test suite** ready to run against your real backend
+> Describe your API in plain English → get production-ready specs, mock data, DB models, tests, and PDF docs in seconds.
+
+---
+
+## 🏗️ Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                       React + Vite (SPA)                     │
+│  Dashboard → Prompt Form → Endpoint Cards → Code Viewer      │
+└──────────────────────┬───────────────────────────────────────┘
+                       │  POST /generate
+                       ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    FastAPI Backend (v2.0)                     │
+│                                                              │
+│  ┌─────────────┐  ┌────────────┐  ┌──────────────────────┐  │
+│  │  Timing MW  │→ │ Rate Limit │→ │  Input Sanitisation  │  │
+│  │ (X-Resp-Ms) │  │ 10/min/IP  │  │  (2000 char cap)     │  │
+│  └─────────────┘  └────────────┘  └──────────┬───────────┘  │
+│                                               │              │
+│  ┌────────────────────────────────────────────▼───────────┐  │
+│  │              LRU Cache (64 entries)                     │  │
+│  │  SHA-256 key = f(description, auth, lang, endpoints)   │  │
+│  │  Cache hit → <1ms response                             │  │
+│  └───────────┬──────────────────────────┬────────────────┘  │
+│              │ miss                      │ hit → return     │
+│  ┌───────────▼──────────────────────────────────────────┐   │
+│  │     2-Pass Generation Pipeline (per provider)         │   │
+│  │                                                       │   │
+│  │  Pass 1: Core spec (endpoints + DB models)            │   │
+│  │    Groq  → Raw text + JSON extraction                 │   │
+│  │    Gemini → Pydantic structured output                │   │
+│  │                                                       │   │
+│  │  Pass 2: Test cases (lightweight follow-up)           │   │
+│  │    Both → Raw text + JSON array extraction             │   │
+│  │                                                       │   │
+│  │  Fallback: Groq ──fail──→ Gemini (auto)               │   │
+│  └───────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## 🚀 Features
 
-- **Natural Language Input**: Just describe what API you need — no OpenAPI writing required.
-- **AI-Generated Specs**: Endpoints, schemas, sample data, and status codes — all production-ready.
-- **Professional PDF Docs**: Download a dark-themed, fully-formatted API integration guide.
-- **Auto Test Suite**: Get pytest-compatible test definitions generated for every endpoint.
-- **Multiple Auth Types**: Bearer Token, API Key, Basic Auth, or No Auth.
+| Feature | Implementation |
+|---|---|
+| **Natural Language → API Spec** | 2-pass pipeline: raw text + JSON extraction (Groq) / Pydantic structured output (Gemini) |
+| **Dual-Provider Fallback** | Groq (primary) → Google Gemini (secondary) with automatic failover |
+| **In-Memory LRU Cache** | SHA-256 keyed, 64-entry bounded cache — repeat queries return in <1ms |
+| **Per-Request Latency Tracking** | `X-Response-Time-Ms` header on every response + `latency_ms` in JSON body |
+| **Rate Limiting** | 10 requests/min per IP — prevents abuse without external dependencies |
+| **Input Sanitisation** | Description capped at 2000 chars, whitespace stripped |
+| **Structured Logging** | Python `logging` with timestamps, severity levels, and request context |
+| **Health Endpoint** | `/health` returns uptime, cache hit-rate, and provider availability |
+| **Professional PDF Export** | ReportLab-based dark-themed API documentation generator |
 
 ---
 
@@ -21,11 +64,12 @@ Describe your API in plain English and instantly get:
 
 | Layer | Technology |
 |---|---|
-| **Frontend** | React + Vite |
-| **Backend** | FastAPI (Python 3.9+) |
-| **AI Engine** | Groq (Llama 3.3 70B) + LangChain |
+| **Frontend** | React 19 + Vite 8, React Router v6 |
+| **Backend** | FastAPI (Python 3.10+), Starlette Middleware |
+| **AI Engine** | Groq (Llama 3.3 70B) + Google Gemini 2.5 Flash via LangChain |
+| **Data Validation** | Pydantic v2 (structured output binding) |
 | **PDF Engine** | ReportLab |
-| **Data Validation** | Pydantic v2 |
+| **Caching** | Custom in-memory LRU (OrderedDict) |
 
 ---
 
@@ -42,6 +86,7 @@ pip install -r requirements.txt
 Configure your `.env`:
 ```env
 GROQ_API_KEY=your_groq_api_key
+GOOGLE_API_KEY=your_google_api_key   # optional fallback
 ```
 
 ### Frontend
@@ -60,6 +105,7 @@ cd backend
 uvicorn app:app --reload
 ```
 - API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+- Health: [http://localhost:8000/health](http://localhost:8000/health)
 
 ### Frontend (UI)
 ```bash
@@ -75,18 +121,20 @@ npm run dev
 ```
 API-Genie/
 ├── backend/
-│   ├── app.py              # FastAPI application & endpoints
-│   ├── report.py           # AI engine (Groq + LangChain)
-│   ├── models.py           # Pydantic schemas
+│   ├── app.py              # FastAPI app — middleware, rate limiting, routes
+│   ├── report.py           # LLM orchestration — cache, fallback, generation
+│   ├── models.py           # Pydantic v2 schemas (input + output)
 │   ├── pdf_generator.py    # ReportLab PDF renderer
 │   ├── requirements.txt    # Python dependencies
-│   └── .env                # API keys
+│   └── .env                # API keys (gitignored)
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx         # Main React component
-│   │   ├── App.css         # Dark theme styles
-│   │   ├── index.css       # Global styles
-│   │   └── main.jsx        # Entry point
+│   │   ├── App.jsx         # Main generation UI
+│   │   ├── Dashboard.jsx   # Landing page
+│   │   ├── App.css         # Component styles (dark theme)
+│   │   ├── Dashboard.css   # Dashboard styles
+│   │   ├── index.css       # Global design tokens
+│   │   └── main.jsx        # React Router entry point
 │   ├── index.html          # HTML template
 │   └── package.json        # Node dependencies
 └── README.md
@@ -96,11 +144,26 @@ API-Genie/
 
 ## 📝 API Endpoints
 
-### `POST /generate`
-Generates the API specification in JSON format.
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Root — service info |
+| `GET` | `/health` | Health check with uptime, cache stats, provider status |
+| `POST` | `/generate` | Generate API specification from natural language prompt |
 
-### `POST /generate/pdf`
-Generates and returns the API documentation as a downloadable PDF.
+### Response Metadata
+Every `/generate` response includes:
+```json
+{
+  "latency_ms": 4231.07,
+  "llm_provider": "groq/llama-3.3-70b",
+  "cached": false
+}
+```
 
-### `GET /health`
-Health check endpoint.
+---
+
+## 📊 Resume Bullet Points
+
+- Engineered an **AI-powered API documentation generator** using FastAPI, LangChain, and Groq/Gemini LLMs with a **2-pass generation pipeline** — splitting endpoint specs and test suites into separate LLM calls to reduce per-call payload size and improve reliability
+- Implemented **dual-provider LLM fallback** (Groq → Gemini) with **adaptive output parsing** — raw text + JSON extraction for Groq (avoiding tool-call schema limits), structured Pydantic binding for Gemini — plus **in-memory LRU caching** (SHA-256 keyed) reducing repeat-query latency to **<1ms**
+- Built per-request **latency tracking middleware** (`X-Response-Time-Ms`), in-memory **rate limiting** (10 req/min/IP), input sanitization, and structured logging; designed a dark-themed React SPA with code viewer modals and one-click export

@@ -63,45 +63,34 @@ class APIGenieRequest(BaseModel):
 
 
 # ─────────────────────────────────────────────
-# Output: AI-Generated Mock Endpoint
+# Output: AI-Generated Documentation (LLM structured output target)
 # ─────────────────────────────────────────────
 
-class MockField(BaseModel):
+class SchemaField(BaseModel):
     name: str
-    type: str = Field(description="e.g. string, integer, float, boolean, uuid, datetime, email")
-    description: Optional[str] = None
-    example: Any = None
+    type: str
+    description: str
 
-
-class MockEndpoint(BaseModel):
+class EndpointDoc(BaseModel):
     path: str
     method: str
-    summary: str = ""
-    description: str = ""
-    request_schema: Optional[Any] = None
-    response_schema: Any = []
-    sample_response: Any = {}
-    code_example: str = ""
-    status_codes: Any = Field(
-        default={"200": "Success"},
-        description="Map of status code to description"
-    )
+    summary: str
+    description: str
+    request_schema: List[SchemaField] = []
+    response_schema: List[SchemaField] = []
+    sample_response: Dict[str, Any] = {}
+    code_example: str
+    database_code: str
+    status_codes: Dict[str, str]
 
-
-class TestCase(BaseModel):
-    name: str = Field(default="test_unnamed", description="Test function name, e.g. test_get_users_returns_200")
-    endpoint: str = ""
-    method: str = "GET"
-    description: str = ""
-    expected_status: int = 200
-    request_body: Optional[Any] = None
-    assertions: Any = Field(default=[], description="List of assertion descriptions")
-    code: str = Field(default="", description="The actual runnable test code string in the selected language")
-
-
-# ─────────────────────────────────────────────
-# Master Output: Full API Documentation
-# ─────────────────────────────────────────────
+class TestCaseDoc(BaseModel):
+    name: str
+    endpoint: str
+    method: str
+    description: str
+    expected_status: int
+    assertions: List[str]
+    code: str
 
 class APIDocumentation(BaseModel):
     project_name: str = "My API"
@@ -109,8 +98,10 @@ class APIDocumentation(BaseModel):
     auth_type: str = "none"
     auth_instructions: str = ""
     overview: str = Field(default="", description="High-level summary of the API")
-    endpoints: List[Any] = []
-    test_cases: List[Any] = []
+    database_setup: str = Field(default="", description="SQL or migration code")
+    database_models: str = Field(default="", description="ORM model definitions")
+    endpoints: List[EndpointDoc] = []
+    test_cases: List[TestCaseDoc] = []
     setup_instructions: str = Field(default="", description="How to run the mock server")
 
 
@@ -121,3 +112,6 @@ class APIGenieResponse(BaseModel):
     documentation: APIDocumentation
     raw_llm_output: str
     generated_at: str
+    latency_ms: float = Field(default=0.0, description="End-to-end generation latency in milliseconds")
+    llm_provider: str = Field(default="", description="Which LLM provider served this request")
+    cached: bool = Field(default=False, description="Whether this response was served from cache")

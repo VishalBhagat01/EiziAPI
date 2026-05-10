@@ -1,18 +1,39 @@
 """
 app.py — API-Genie: AI-Powered API Mock & Documentation Generator
-FastAPI application with LangChain + Groq
+
+Production-grade FastAPI application with:
+  • Request timing middleware (X-Response-Time-Ms header)
+  • Structured logging with request correlation
+  • In-memory rate limiting (10 req/min per IP on /generate)
+  • Cache-aware health check with uptime & provider stats
+  • Input sanitization (description length cap)
+  • LLM provider fallback (Groq → Gemini)
 """
 
-import io
+import time
+import logging
 from datetime import datetime, timezone
+from collections import defaultdict
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
-from models import APIGenieRequest, APIGenieResponse, APIDocumentation
-from report import generate_api_spec
-from pdf_generator import generate_pdf
+from models import APIGenieRequest, APIGenieResponse
+from report import generate_api_spec, get_cache_stats
+
+# ─────────────────────────────────────────────
+# Logging
+# ─────────────────────────────────────────────
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("api_genie")
+
+_BOOT_TIME = datetime.now(timezone.utc)
 
 
 # ─────────────────────────────────────────────
@@ -26,20 +47,21 @@ app = FastAPI(
 
 Describe the API you need in plain English, and API-Genie will generate:
 - **Complete REST API specification** with realistic mock data
-- **Professional PDF documentation** (Stripe-style)
+- **Database-ready code** (SQLAlchemy/Sequelize)
 - **Pytest test suite** ready to run against your real backend
 
-### How it works
-1. Describe your API (e.g., "E-commerce platform with products, orders, and payments")
-2. AI generates endpoints, schemas, sample data, and tests
-3. Download the docs as PDF or integrate with your CI/CD pipeline
+### Architecture Highlights
+- 🔁 **Dual-provider LLM fallback** (Groq → Google Gemini)
+- ⚡ **In-memory LRU cache** — repeat queries return in <1ms
+- 📊 **Per-request latency tracking** via `X-Response-Time-Ms` header
+- 🛡️ **Rate limiting** — 10 requests/min per IP on generation endpoint
 
 ### Powered By
-- 🤖 Groq (Llama 3.3 70B)
-- 🦜 LangChain
-- ⚡ FastAPI
+- 🤖 Groq (Llama 3.3 70B) / Google Gemini 2.5 Flash
+- 🦜 LangChain (structured output)
+- ⚡ FastAPI + Pydantic v2
     """,
-    version="1.0.0",
+    version="2.0.0",
     contact={"name": "API-Genie"},
 )
 
@@ -53,6 +75,66 @@ app.add_middleware(
 
 
 # ─────────────────────────────────────────────
+# Middleware: Request Timing
+# ─────────────────────────────────────────────
+
+class TimingMiddleware(BaseHTTPMiddleware):
+    """Injects X-Response-Time-Ms header into every response."""
+
+    async def dispatch(self, request: Request, call_next):
+        t0 = time.perf_counter()
+        response = await call_next(request)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        response.headers["X-Response-Time-Ms"] = f"{elapsed_ms:.2f}"
+        logger.info(
+            "%s %s → %d (%.0fms)",
+            request.method,
+            request.url.path,
+            response.status_code,
+            elapsed_ms,
+        )
+        return response
+
+
+app.add_middleware(TimingMiddleware)
+
+
+# ─────────────────────────────────────────────
+# Rate Limiter (in-memory, per-IP)
+# ─────────────────────────────────────────────
+
+_rate_store: dict[str, list[float]] = defaultdict(list)
+_RATE_LIMIT = 10          # max requests
+_RATE_WINDOW_SEC = 60     # per this many seconds
+
+
+def _check_rate_limit(client_ip: str) -> bool:
+    """Returns True if client is within rate limit, False if exceeded."""
+    now = time.time()
+    timestamps = _rate_store[client_ip]
+    # Prune expired entries
+    _rate_store[client_ip] = [t for t in timestamps if now - t < _RATE_WINDOW_SEC]
+    if len(_rate_store[client_ip]) >= _RATE_LIMIT:
+        return False
+    _rate_store[client_ip].append(now)
+    return True
+
+
+# ─────────────────────────────────────────────
+# Input Sanitisation
+# ─────────────────────────────────────────────
+
+_MAX_DESCRIPTION_LEN = 2000  # chars
+
+
+def _sanitize_request(request: APIGenieRequest) -> APIGenieRequest:
+    """Truncate excessively long descriptions, strip whitespace."""
+    request.description = request.description.strip()[:_MAX_DESCRIPTION_LEN]
+    request.project_name = request.project_name.strip() or "My API"
+    return request
+
+
+# ─────────────────────────────────────────────
 # Routes
 # ─────────────────────────────────────────────
 
@@ -61,11 +143,10 @@ def root():
     """API root — health check."""
     return {
         "message": "API-Genie ⚡ — AI-Powered API Mock Generator",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "docs": "/docs",
         "endpoints": {
             "generate_spec_json": "POST /generate",
-            "generate_spec_pdf": "POST /generate/pdf",
             "health": "GET /health",
         },
     }
@@ -73,11 +154,17 @@ def root():
 
 @app.get("/health", tags=["Health"])
 def health():
-    """Health check endpoint."""
+    """Health check with uptime, cache stats, and provider info."""
+    now = datetime.now(timezone.utc)
+    uptime_seconds = (now - _BOOT_TIME).total_seconds()
     return {
         "status": "healthy",
         "service": "API-Genie",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "version": "2.0.0",
+        "timestamp": now.isoformat(),
+        "uptime_seconds": round(uptime_seconds, 1),
+        "cache": get_cache_stats(),
+        "providers": ["groq/llama-3.3-70b", "google/gemini-2.5-flash"],
     }
 
 
@@ -92,12 +179,31 @@ Describe your API in plain English and get back a complete specification with:
 - Realistic sample responses
 - Pytest test case definitions
 - Authentication setup instructions
+
+**Performance**: Repeat queries are served from LRU cache (<1ms).
+**Fallback**: If the primary LLM provider fails, a secondary provider is tried automatically.
     """,
 )
-async def generate_spec_json(request: APIGenieRequest):
+async def generate_spec_json(request: APIGenieRequest, req: Request):
     """Generate API spec and return as structured JSON."""
+    # ── Rate limit ──
+    client_ip = req.client.host if req.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        logger.warning("Rate limit exceeded for %s", client_ip)
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded. Maximum {_RATE_LIMIT} requests per {_RATE_WINDOW_SEC}s.",
+        )
+
+    # ── Sanitize ──
+    request = _sanitize_request(request)
+
+    if not request.description:
+        raise HTTPException(status_code=422, detail="Description cannot be empty.")
+
     try:
-        doc_dict, raw_text = generate_api_spec(request)
+        doc_dict, raw_text, latency_ms, provider, from_cache = generate_api_spec(request)
+
         return APIGenieResponse(
             success=True,
             project_name=request.project_name,
@@ -105,53 +211,14 @@ async def generate_spec_json(request: APIGenieRequest):
             documentation=doc_dict,
             raw_llm_output=raw_text,
             generated_at=datetime.now(timezone.utc).isoformat(),
+            latency_ms=round(latency_ms, 2),
+            llm_provider=provider,
+            cached=from_cache,
         )
     except EnvironmentError as e:
         raise HTTPException(status_code=500, detail=f"Configuration error: {str(e)}")
     except ValueError as e:
         raise HTTPException(status_code=422, detail=f"Generation failed: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
-
-
-@app.post(
-    "/generate/pdf",
-    tags=["Generation"],
-    summary="Generate API Documentation (PDF)",
-    description="""
-Same as `/generate` but returns a downloadable **PDF file** with professional API documentation.
-
-The PDF includes:
-- Dark-themed professional layout
-- Method-colored endpoint badges (GET=green, POST=cyan, etc.)
-- Schema tables with field types and descriptions
-- Sample response JSON blocks
-- Auto-generated test suite
-    """,
-    response_class=StreamingResponse,
-    responses={
-        200: {
-            "content": {"application/pdf": {}},
-            "description": "PDF file download",
-        }
-    },
-)
-async def generate_spec_pdf(request: APIGenieRequest):
-    """Generate API documentation and return as a downloadable PDF."""
-    try:
-        doc_dict, _ = generate_api_spec(request)
-        pdf_bytes = generate_pdf(doc_dict)
-        filename = request.project_name.replace(" ", "_")
-        return StreamingResponse(
-            io.BytesIO(pdf_bytes),
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f'attachment; filename="APIGenie_{filename}_Docs.pdf"',
-            },
-        )
-    except EnvironmentError as e:
-        raise HTTPException(status_code=500, detail=f"Configuration error: {str(e)}")
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=f"Generation failed: {str(e)}")
-    except Exception as e:
+        logger.exception("Unhandled error in /generate")
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")

@@ -1,19 +1,27 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import './App.css'
 
 const API_URL = 'http://localhost:8000'
 
 function App() {
-  const [projectName, setProjectName] = useState('')
+  const location = useLocation()
+  const [projectName, setProjectName] = useState(location.state?.projectName || '')
   const [description, setDescription] = useState('')
   const [authType, setAuthType] = useState('bearer_token')
   const [codeLanguage, setCodeLanguage] = useState('javascript')
   const [numEndpoints, setNumEndpoints] = useState(5)
   const [loading, setLoading] = useState(false)
-  const [pdfLoading, setPdfLoading] = useState(false)
   const [status, setStatus] = useState(null) // { type: 'loading'|'success'|'error', msg: '' }
   const [result, setResult] = useState(null)
   const [expandedEndpoints, setExpandedEndpoints] = useState({})
+
+  // Update project name if location state changes
+  useEffect(() => {
+    if (location.state?.projectName) {
+      setProjectName(location.state.projectName)
+    }
+  }, [location.state])
 
   const buildPayload = () => ({
     project_name: projectName || 'My API',
@@ -52,43 +60,92 @@ function App() {
     }
   }
 
-  const handleDownloadPDF = async () => {
-    if (!description.trim()) {
-      setStatus({ type: 'error', msg: 'Please describe your API first.' })
+  const getAllCodeSnippets = () => {
+    if (!result || !result.documentation || !result.documentation.endpoints) {
+      return ''
+    }
+    
+    let code = ''
+    
+    // Add database setup if available
+    if (result.documentation.database_setup) {
+      code += `// ═══ DATABASE SETUP ═══\n`
+      code += `// ${result.documentation.database_setup}\n\n`
+    }
+    
+    // Add database models if available
+    if (result.documentation.database_models) {
+      code += `// ═══ DATABASE MODELS ═══\n`
+      code += result.documentation.database_models + '\n\n'
+    }
+    
+    // Add endpoints with both client and database code
+    result.documentation.endpoints.forEach(endpoint => {
+      code += `// ═══ ${endpoint.method} ${endpoint.path} ═══\n`
+      code += `// ${endpoint.summary}\n\n`
+      
+      if (endpoint.code_example) {
+        code += `// CLIENT CODE:\n`
+        code += endpoint.code_example + '\n\n'
+      }
+      
+      if (endpoint.database_code) {
+        code += `// DATABASE CODE:\n`
+        code += endpoint.database_code + '\n\n'
+      }
+      
+      code += '\n'
+    })
+    
+    return code
+  }
+
+  const handleDownloadCode = () => {
+    const allCode = getAllCodeSnippets()
+    if (!allCode) {
+      setStatus({ type: 'error', msg: 'No code to download. Please generate the spec first.' })
       return
     }
-    setPdfLoading(true)
-    setStatus({ type: 'loading', msg: 'Generating PDF documentation...' })
-
-    try {
-      const res = await fetch(`${API_URL}/generate/pdf`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildPayload()),
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.detail || 'PDF generation failed')
-      }
-      const blob = await res.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `APIGenie_${(projectName || 'API').replace(/\s+/g, '_')}_Docs.pdf`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      window.URL.revokeObjectURL(url)
-      setStatus({ type: 'success', msg: 'PDF downloaded successfully!' })
-    } catch (err) {
-      setStatus({ type: 'error', msg: err.message })
-    } finally {
-      setPdfLoading(false)
-    }
+    const blob = new Blob([allCode], { type: 'text/plain;charset=utf-8' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${(projectName || 'API').replace(/\s+/g, '_')}_endpoints.${codeLanguage === 'python' ? 'py' : 'js'}`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.URL.revokeObjectURL(url)
+    setStatus({ type: 'success', msg: 'Code downloaded successfully!' })
   }
+
+  const handleCopyCode = () => {
+    const allCode = getAllCodeSnippets()
+    if (!allCode) {
+      setStatus({ type: 'error', msg: 'No code to copy. Please generate the spec first.' })
+      return
+    }
+    navigator.clipboard.writeText(allCode).then(() => {
+      setStatus({ type: 'success', msg: 'Code copied to clipboard!' })
+    }, () => {
+      setStatus({ type: 'error', msg: 'Failed to copy code.' })
+    })
+  }
+
+  const [selectedCode, setSelectedCode] = useState(null) // { title: '', code: '', lang: '' }
 
   const toggleEndpoint = (index) => {
     setExpandedEndpoints(prev => ({ ...prev, [index]: !prev[index] }))
+  }
+
+  const openEditor = (title, code, lang) => {
+    const formattedCode = typeof code === 'string' ? code : JSON.stringify(code, null, 2)
+    setSelectedCode({ title, code: formattedCode, lang })
+    document.body.style.overflow = 'hidden'
+  }
+
+  const closeEditor = () => {
+    setSelectedCode(null)
+    document.body.style.overflow = 'auto'
   }
 
   const doc = result?.documentation
@@ -101,7 +158,10 @@ function App() {
           <span className="logo-icon">⚡</span>
           <h1>API-Genie</h1>
         </div>
-        <span className="header-tag">v1.0.0</span>
+        <div className="header-nav">
+          <Link to="/" className="header-link">Dashboard</Link>
+          <span className="header-tag">v2.0.0</span>
+        </div>
       </header>
 
       {/* ── Main ── */}
@@ -169,24 +229,33 @@ function App() {
             </div>
           </div>
 
-          {/* Buttons */}
           <div className="btn-row">
             <button
               id="btn-generate"
               className="btn btn-primary"
               onClick={handleGenerate}
-              disabled={loading || pdfLoading}
+              disabled={loading}
             >
               {loading ? <><span className="spinner" /> Generating...</> : <>⚡ Generate Spec</>}
             </button>
-            <button
-              id="btn-pdf"
-              className="btn btn-secondary"
-              onClick={handleDownloadPDF}
-              disabled={loading || pdfLoading}
-            >
-              {pdfLoading ? <><span className="spinner" /> Creating PDF...</> : <>📄 Download PDF</>}
-            </button>
+            <div className="code-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={handleDownloadCode}
+                disabled={!result || loading}
+                title={!result ? "Generate a spec to download the code" : "Download all endpoint code"}
+              >
+                <>📦 Download Code</>
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={handleCopyCode}
+                disabled={!result || loading}
+                title={!result ? "Generate a spec to copy the code" : "Copy all endpoint code"}
+              >
+                <>📋 Copy Code</>
+              </button>
+            </div>
           </div>
 
           {/* Status */}
@@ -208,10 +277,37 @@ function App() {
               <div className="results-stats">
                 <span className="stat"><span className="num">{doc.endpoints?.length || 0}</span> Endpoints</span>
                 <span className="stat"><span className="num">{doc.test_cases?.length || 0}</span> Tests</span>
+                {result?.latency_ms !== undefined && (
+                  <span className="stat"><span className="num">{result.cached ? '<1' : Math.round(result.latency_ms)}</span> ms</span>
+                )}
+                {result?.llm_provider && (
+                  <span className="stat">{result.llm_provider}</span>
+                )}
+                {result?.cached && (
+                  <span className="stat cached">⚡ Cached</span>
+                )}
               </div>
             </div>
 
-            {/* Overview */}
+            {/* Overview & Global Actions */}
+            <div className="results-actions" style={{ marginBottom: '24px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              {doc.database_models && (
+                <button className="btn btn-secondary" onClick={() => openEditor('Database Models', doc.database_models, codeLanguage)}>
+                  🗄️ View Models
+                </button>
+              )}
+              {doc.setup_instructions && (
+                <button className="btn btn-secondary" onClick={() => openEditor('Setup Instructions', doc.setup_instructions, 'markdown')}>
+                  📜 Setup Guide
+                </button>
+              )}
+              {result && (
+                <button className="btn btn-primary" onClick={() => openEditor('Full Project Implementation', getAllCodeSnippets(), codeLanguage)}>
+                  🚀 Full Project Code
+                </button>
+              )}
+            </div>
+
             {doc.overview && (
               <div className="code-block" style={{ marginBottom: 16 }}>
                 <pre style={{ color: 'var(--text-secondary)' }}>{doc.overview}</pre>
@@ -233,6 +329,19 @@ function App() {
                 {expandedEndpoints[i] && (
                   <div className="endpoint-body">
                     {ep.description && <p className="endpoint-desc">{ep.description}</p>}
+
+                    <div className="endpoint-actions">
+                       {ep.code_example && (
+                         <button className="btn-view-code" onClick={() => openEditor(`${ep.method} ${ep.path} - Client Code`, ep.code_example, codeLanguage)}>
+                           Client Code
+                         </button>
+                       )}
+                       {ep.database_code && (
+                         <button className="btn-view-code" onClick={() => openEditor(`${ep.method} ${ep.path} - Database Handler`, ep.database_code, codeLanguage)}>
+                           Database Code
+                         </button>
+                       )}
+                    </div>
 
                     {/* Request Schema */}
                     {ep.request_schema && ep.request_schema.length > 0 && (
@@ -280,39 +389,9 @@ function App() {
                     {ep.sample_response && (
                       <>
                         <p className="schema-title">Sample Response</p>
-                        <div className="code-block">
+                        <div className="code-block small">
                           <pre>{JSON.stringify(ep.sample_response, null, 2)}</pre>
                         </div>
-                      </>
-                    )}
-
-                    {/* Code Example */}
-                    {ep.code_example && (
-                      <>
-                        <p className="schema-title">Code Example</p>
-                        <div className="code-block">
-                          <pre>{ep.code_example}</pre>
-                        </div>
-                      </>
-                    )}
-
-                    {/* Status Codes */}
-                    {ep.status_codes && (
-                      <>
-                        <p className="schema-title">Status Codes</p>
-                        <table className="schema-table">
-                          <thead>
-                            <tr><th>Code</th><th>Description</th></tr>
-                          </thead>
-                          <tbody>
-                            {Object.entries(ep.status_codes).map(([code, desc], j) => (
-                              <tr key={j}>
-                                <td className="fname">{code}</td>
-                                <td className="fdesc">{desc}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
                       </>
                     )}
                   </div>
@@ -326,9 +405,6 @@ function App() {
                 <h3 style={{ marginBottom: '20px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
                   🧪 Testing Requirements
                 </h3>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '20px' }}>
-                  These validation scenarios should be implemented in your CI/CD test suite ({codeLanguage === 'javascript' ? 'e.g., Jest, Supertest' : 'e.g., Pytest'}).
-                </p>
                 <div style={{ display: 'grid', gap: '16px' }}>
                   {doc.test_cases.map((tc, i) => (
                     <div className="test-card" key={i} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -336,34 +412,11 @@ function App() {
                         <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--text-primary)' }}>
                           {tc.name.replace(/_/g, ' ').replace(/^test /i, '').replace(/\b\w/g, l => l.toUpperCase())}
                         </div>
-                        <div className={`method-badge ${tc.method?.toLowerCase()}`}>
-                          {tc.method}
-                        </div>
+                        <button className="btn-view-code" onClick={() => openEditor(`Test: ${tc.name}`, tc.code, codeLanguage)}>
+                          View Test Code
+                        </button>
                       </div>
-                      
                       <p style={{ color: 'var(--text-secondary)', fontSize: '14px', margin: 0 }}>{tc.description}</p>
-                      
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px', background: 'var(--bg-input)', borderRadius: '6px', border: '1px solid var(--border)' }}>
-                        <div style={{ flex: 1 }}>
-                          <span style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>Target Endpoint</span>
-                          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--accent-cyan)', marginTop: '4px' }}>{tc.endpoint}</div>
-                        </div>
-                        <div style={{ paddingLeft: '16px', borderLeft: '1px solid var(--border)' }}>
-                          <span style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>Expected Status</span>
-                          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--text-primary)', marginTop: '4px' }}>{tc.expected_status}</div>
-                        </div>
-                      </div>
-
-                      {tc.assertions && tc.assertions.length > 0 && (
-                        <div>
-                          <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Validation Criteria:</span>
-                          <ul style={{ margin: '8px 0 0 20px', padding: 0, color: 'var(--text-light)', fontSize: '14px' }}>
-                            {tc.assertions.map((a, j) => (
-                              <li key={j} style={{ paddingBottom: '6px' }}>{a}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
                     </div>
                   ))}
                 </div>
@@ -373,9 +426,30 @@ function App() {
         )}
       </main>
 
+      {/* ── Editor Modal ── */}
+      {selectedCode && (
+        <div className="editor-overlay" onClick={closeEditor}>
+          <div className="editor-modal" onClick={e => e.stopPropagation()}>
+            <div className="editor-header">
+              <h3>{selectedCode.title}</h3>
+              <button className="close-btn" onClick={closeEditor}>&times;</button>
+            </div>
+            <div className="editor-body">
+              <pre><code>{selectedCode.code}</code></pre>
+            </div>
+            <div className="editor-footer">
+              <button className="btn btn-secondary" onClick={() => {
+                navigator.clipboard.writeText(selectedCode.code)
+                alert('Copied to clipboard!')
+              }}>Copy Code</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Footer ── */}
       <footer className="footer">
-        API-Genie — Built with FastAPI, LangChain, and Groq
+        API-Genie v2.0 — FastAPI + LangChain + Groq/Gemini | Cached LLM with Provider Fallback
       </footer>
     </div>
   )
