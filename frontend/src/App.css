@@ -300,6 +300,13 @@
   margin-bottom: 16px;
 }
 
+.results-actions {
+  margin-bottom: 24px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .results-header h3 {
   font-size: 18px;
   font-weight: 700;
@@ -491,36 +498,52 @@
 
 /* ── Test Cases ── */
 .tests-section {
-  margin-top: 24px;
+  margin-top: 40px;
+}
+
+.tests-heading {
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+
+.tests-grid {
+  display: grid;
+  gap: 16px;
 }
 
 .test-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 14px 16px;
-  margin-bottom: 8px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: var(--transition);
 }
 
-.test-name {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--accent-green);
-  font-weight: 500;
-  margin-bottom: 4px;
+.test-card:hover {
+  border-color: var(--border-focus);
 }
 
-.test-desc {
-  font-size: 12px;
+.test-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.test-card-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.test-card-desc {
   color: var(--text-secondary);
-  margin-bottom: 6px;
-}
-
-.test-assert {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--accent-purple);
-  padding: 2px 0;
+  font-size: 14px;
+  margin: 0;
+  line-height: 1.5;
 }
 
 /* ── Footer ── */
@@ -633,20 +656,29 @@
 
 .editor-body {
   flex: 1;
-  padding: 0;
-  overflow: auto; /* Enable both vertical and horizontal scrolling */
+  overflow: hidden;
   background: #0d0d0d;
 }
 
-.editor-body pre {
-  margin: 0;
-  padding: 1.5rem;
-  font-family: var(--font-mono);
-  font-size: 14px;
-  line-height: 1.6;
-  color: #e6e6e6;
-  width: max-content; /* Ensure horizontal scroll for long lines */
-  min-width: 100%;
+.editor-body .cv-container {
+  border: none;
+  border-radius: 0;
+  height: 100%;
+}
+
+.editor-body .cv-scroll {
+  max-height: none;
+  height: calc(100% - 33px); /* subtract toolbar height */
+}
+
+/* Inline code viewer (sample responses in endpoint cards) */
+.inline-code-viewer .cv-container {
+  margin: 8px 0;
+  max-height: 200px;
+}
+
+.inline-code-viewer .cv-scroll {
+  max-height: 160px;
 }
 
 .editor-footer {

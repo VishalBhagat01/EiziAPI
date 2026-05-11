@@ -159,11 +159,3 @@ Every `/generate` response includes:
   "cached": false
 }
 ```
-
----
-
-## 📊 Resume Bullet Points
-
-- Engineered an **AI-powered API documentation generator** using FastAPI, LangChain, and Groq/Gemini LLMs with a **2-pass generation pipeline** — splitting endpoint specs and test suites into separate LLM calls to reduce per-call payload size and improve reliability
-- Implemented **dual-provider LLM fallback** (Groq → Gemini) with **adaptive output parsing** — raw text + JSON extraction for Groq (avoiding tool-call schema limits), structured Pydantic binding for Gemini — plus **in-memory LRU caching** (SHA-256 keyed) reducing repeat-query latency to **<1ms**
-- Built per-request **latency tracking middleware** (`X-Response-Time-Ms`), in-memory **rate limiting** (10 req/min/IP), input sanitization, and structured logging; designed a dark-themed React SPA with code viewer modals and one-click export
