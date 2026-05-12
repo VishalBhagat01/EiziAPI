@@ -43,7 +43,7 @@ _BOOT_TIME = datetime.now(timezone.utc)
 app = FastAPI(
     title="API-Genie",
     description="""
-## ⚡ API-Genie — AI-Powered API Mock & Documentation Generator
+##  API-Genie — AI-Powered API Mock & Documentation Generator
 
 Describe the API you need in plain English, and API-Genie will generate:
 - **Complete REST API specification** with realistic mock data
@@ -51,15 +51,15 @@ Describe the API you need in plain English, and API-Genie will generate:
 - **Pytest test suite** ready to run against your real backend
 
 ### Architecture Highlights
-- 🔁 **Dual-provider LLM fallback** (Groq → Google Gemini)
-- ⚡ **In-memory LRU cache** — repeat queries return in <1ms
-- 📊 **Per-request latency tracking** via `X-Response-Time-Ms` header
-- 🛡️ **Rate limiting** — 10 requests/min per IP on generation endpoint
+-  **Dual-provider LLM fallback** (Groq → Google Gemini)
+-  **In-memory LRU cache** — repeat queries return in <1ms
+-  **Per-request latency tracking** via `X-Response-Time-Ms` header
+-  **Rate limiting** — 10 requests/min per IP on generation endpoint
 
 ### Powered By
-- 🤖 Groq (Llama 3.3 70B) / Google Gemini 2.5 Flash
-- 🦜 LangChain (structured output)
-- ⚡ FastAPI + Pydantic v2
+-  Groq (Llama 3.3 70B) / Google Gemini 2.5 Flash
+-  LangChain (structured output)
+-  FastAPI + Pydantic v2
     """,
     version="2.0.0",
     contact={"name": "API-Genie"},
@@ -184,6 +184,8 @@ Describe your API in plain English and get back a complete specification with:
 **Fallback**: If the primary LLM provider fails, a secondary provider is tried automatically.
     """,
 )
+
+
 async def generate_spec_json(request: APIGenieRequest, req: Request):
     """Generate API spec and return as structured JSON."""
     # ── Rate limit ──
