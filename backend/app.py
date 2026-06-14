@@ -1,15 +1,3 @@
-"""
-app.py — API-Genie: AI-Powered API Mock & Documentation Generator
-
-Production-grade FastAPI application with:
-  • Request timing middleware (X-Response-Time-Ms header)
-  • Structured logging with request correlation
-  • In-memory rate limiting (10 req/min per IP on /generate)
-  • Cache-aware health check with uptime & provider stats
-  • Input sanitization (description length cap)
-  • LLM provider fallback (Groq → Gemini)
-"""
-
 import time
 import logging
 from datetime import datetime, timezone
